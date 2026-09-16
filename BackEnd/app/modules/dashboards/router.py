@@ -35,3 +35,14 @@ def dashboard_instructor(
 ):
     """Dashboard del instructor con sus asignaciones, pendientes y grilla de seguimientos."""
     return crud.get_dashboard_instructor(db, current_user.id)
+
+# ================== Dashboard Instructor ==================
+@router.get("/instructor", response_model=schemas.DashboardInstructor)
+def dashboard_instructor(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role(Roles.INSTRUCTOR))
+):
+    """
+    Dashboard del instructor con métricas de sus aprendices asignados.
+    """
+    return crud.get_dashboard_instructor(db, current_user.id)

@@ -16,3 +16,11 @@ class RolesPermisos:
     SOLO_ADMIN = {Roles.ADMIN}
     ADMIN_Y_COORDINADOR = {Roles.ADMIN, Roles.COORDINADOR}
     INSTRUCTOR_Y_COORDINADOR = {Roles.COORDINADOR, Roles.INSTRUCTOR}
+    
+    # Agregados para compatibilidad con los routers que usan RolesPermisos.ADMIN
+    ADMIN = Roles.ADMIN
+    COORDINADOR = Roles.COORDINADOR
+    INSTRUCTOR = Roles.INSTRUCTOR
+    APRENDIZ = Roles.APRENDIZ
+    APOYO_ADMINISTRATIVO = Roles.APOYO_ADMINISTRATIVO
+    CONSULTA = Roles.CONSULTA

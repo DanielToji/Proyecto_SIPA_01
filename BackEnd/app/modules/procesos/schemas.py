@@ -49,6 +49,12 @@ class ProcesoOut(ProcesoBase):
     created_at: datetime
     updated_at: datetime
 
+    # Campos calculados para el frontend
+    aprendiz_nombre: Optional[str] = None
+    aprendiz_email: Optional[str] = None
+    empresa_nombre: Optional[str] = None
+    arl: Optional[str] = None
+
 
 # ================== Checklist Documental ==================
 class ChecklistDocumentoBase(BaseModel):
@@ -100,7 +106,7 @@ class EvaluacionFinalOut(BaseModel):
     updated_at: datetime
 
 
-    # ================== Novedades de Proceso ==================
+# ================== Novedades de Proceso ==================
 class NovedadProcesoBase(BaseModel):
     tipo_novedad: TipoNovedad
     fecha_novedad: date
@@ -127,10 +133,10 @@ class NovedadProcesoOut(NovedadProcesoBase):
     proceso_id: int
     is_active: bool
     created_at: datetime
-    updated_at: datetime  
+    updated_at: datetime
 
 
-    # ================== Avance del Proceso ==================
+# ================== Avance del Proceso ==================
 class ProcesoAvance(BaseModel):
     proceso_id: int
     avance: float

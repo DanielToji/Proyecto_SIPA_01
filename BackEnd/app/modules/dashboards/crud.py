@@ -365,3 +365,57 @@ def get_dashboard_instructor(db: Session, instructor_id: int) -> Dict[str, Any]:
         "seguimientos_pendientes": seguimientos_pendientes,
         "medidas_formativas_pendientes": medidas_pendientes,
     }
+
+# ================== Dashboard Instructor ==================
+def get_dashboard_instructor(db: Session, instructor_id: int):
+    """
+    Obtiene el dashboard del instructor con:
+    - Total de aprendices asignados
+    - Bitácoras pendientes de revisión
+    - Reuniones de seguimiento próximas
+    """
+    from app.models import ProcesoEtapaProductiva, Bitacora, ReunionSeguimiento
+    from app.models import EstadoBitacora, Usuario
+    from datetime import date, timedelta
+    
+    # 1. Total de aprendices asignados (procesos activos)
+    total_aprendices = db.query(ProcesoEtapaProductiva).filter(
+        ProcesoEtapaProductiva.instructor_id == instructor_id,
+        ProcesoEtapaProductiva.estado == "ACTIVO",
+        ProcesoEtapaProductiva.is_active == True
+    ).count()
+    
+    # 2. Bitácoras pendientes de revisión (estado ENVIADA)
+    bitacoras_pendientes = db.query(Bitacora).join(
+        ProcesoEtapaProductiva, 
+        ProcesoEtapaProductiva.id == Bitacora.proceso_id
+    ).filter(
+        ProcesoEtapaProductiva.instructor_id == instructor_id,
+        Bitacora.estado == EstadoBitacora.ENVIADA,
+        Bitacora.is_active == True
+    ).count()
+    
+    # 3. Reuniones de seguimiento próximas (próximos 7 días)
+    hoy = date.today()
+    siguiente_semana = hoy + timedelta(days=7)
+    
+    reuniones_proximas = db.query(ReunionSeguimiento).join(
+        ProcesoEtapaProductiva, 
+        ProcesoEtapaProductiva.id == ReunionSeguimiento.proceso_id
+    ).filter(
+        ProcesoEtapaProductiva.instructor_id == instructor_id,
+        ReunionSeguimiento.fecha_programada >= hoy,
+        ReunionSeguimiento.fecha_programada <= siguiente_semana,
+        ReunionSeguimiento.is_active == True
+    ).count()
+    
+    # Obtener nombre del instructor
+    instructor = db.query(Usuario).filter(Usuario.id == instructor_id).first()
+    
+    return {
+        "total_aprendices": total_aprendices,
+        "bitacoras_pendientes": bitacoras_pendientes,
+        "reuniones_proximas": reuniones_proximas,
+        "instructor_id": instructor_id,
+        "instructor_nombre": instructor.nombre if instructor else None
+    }

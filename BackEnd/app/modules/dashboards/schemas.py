@@ -84,3 +84,14 @@ class DashboardInstructor(BaseModel):
     documentos_pendientes: int
     seguimientos_pendientes: int
     medidas_formativas_pendientes: int
+    
+# ================== Dashboard Instructor ==================
+class DashboardInstructor(BaseModel):
+    total_aprendices: int
+    bitacoras_pendientes: int
+    reuniones_proximas: int
+    instructor_id: int
+    instructor_nombre: Optional[str] = None
+    
+    class Config:
+        from_attributes = True

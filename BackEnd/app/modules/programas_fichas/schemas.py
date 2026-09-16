@@ -39,6 +39,9 @@ class FichaBase(BaseModel):
     numero_ficha: str = Field(..., min_length=3, max_length=20)
     fecha_inicio: date
     fecha_fin: date
+    nivel: Optional[str] = Field(default='Tecnólogo', max_length=50)
+    jornada: Optional[str] = Field(default='Mañana', max_length=50)
+    aprendices_esperados: Optional[int] = Field(default=0, ge=0)
 
 
 class FichaCreate(FichaBase):
@@ -50,6 +53,9 @@ class FichaUpdate(BaseModel):
     numero_ficha: Optional[str] = Field(None, min_length=3, max_length=20)
     fecha_inicio: Optional[date] = None
     fecha_fin: Optional[date] = None
+    nivel: Optional[str] = Field(None, max_length=50)
+    jornada: Optional[str] = Field(None, max_length=50)
+    aprendices_esperados: Optional[int] = Field(None, ge=0)
     is_active: Optional[bool] = None
 
 

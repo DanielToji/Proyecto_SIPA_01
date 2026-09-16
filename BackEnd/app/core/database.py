@@ -2,12 +2,12 @@ import contextvars
 from typing import Optional
 
 from sqlalchemy import create_engine, event, text
-from sqlalchemy.orm import sessionmaker, DeclarativeBase
+from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.declarative import declarative_base
 
 from app.core.config import settings
 
-# ContextVar para almacenar el ID del usuario autenticado durante la petición.
-# Se usa para la auditoría automática en PostgreSQL.
+# ContextVar para almacenar el ID del usuario autenticado durante la peticion.
 current_user_id_ctx: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar(
     "current_user_id", default=None
 )
@@ -38,17 +38,15 @@ SessionLocal = sessionmaker(
 )
 
 
-class Base(DeclarativeBase):
-    """Clase base declarativa para todos los modelos."""
-    pass
+# Clase base declarativa para SQLAlchemy 1.4
+Base = declarative_base()
 
 
 @event.listens_for(SessionLocal, "after_begin")
 def set_audit_user_in_session(session, transaction, connection):
     """
-    Establece la variable de sesión PostgreSQL `app.current_user_id`
-    al inicio de cada transacción. Esto permite que los triggers de auditoría
-    registren qué usuario realizó cada operación.
+    Establece la variable de sesion PostgreSQL `app.current_user_id`
+    al inicio de cada transaccion.
     """
     user_id = current_user_id_ctx.get()
     if user_id is not None:
@@ -60,8 +58,8 @@ def set_audit_user_in_session(session, transaction, connection):
 
 def get_db():
     """
-    Dependencia que provee una sesión de base de datos por petición.
-    Se cierra automáticamente al finalizar.
+    Dependencia que provee una sesion de base de datos por peticion.
+    Se cierra automaticamente al finalizar.
     """
     db = SessionLocal()
     try:

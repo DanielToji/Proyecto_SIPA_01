@@ -149,4 +149,19 @@ def reporte_indicadores_gestion(
     rows = crud.get_datos_indicadores_gestion(db)
     headers = ["indicador", "valor"]
     buffer, content_type, ext = services.generar_reporte("Indicadores de Gestión", headers, rows, formato)
-    return _descargar(buffer, f"indicadores_gestion.{ext}", content_type)  
+    return _descargar(buffer, f"indicadores_gestion.{ext}", content_type)
+
+
+# ============================================================
+# DASHBOARD DE REPORTES GLOBALES (JSON para el frontend)
+# ============================================================
+@router.get("/dashboard")
+def reportes_dashboard(
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
+):
+    """
+    Devuelve todos los datos para la pantalla Reportes Globales
+    en formato JSON.
+    """
+    return crud.get_dashboard_reportes(db)

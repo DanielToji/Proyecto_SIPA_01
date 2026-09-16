@@ -303,3 +303,106 @@ def get_datos_indicadores_gestion(db: Session) -> List[Dict[str, Any]]:
         "indicador": "Documentos pendientes",
         "valor": docs_pendientes,
     }]
+
+
+# ============================================================
+# DASHBOARD DE REPORTES GLOBALES (ADMIN)
+# ============================================================
+def get_dashboard_reportes(db: Session) -> Dict[str, Any]:
+    """
+    Calcula todas las métricas para la pantalla Reportes Globales.
+    Devuelve un dict en JSON.
+    """
+    hoy = datetime.utcnow()
+    hace_30_dias = hoy - timedelta(days=30)
+    hace_6_meses = hoy - timedelta(days=180)
+
+    # ============================================================
+    # 1. NUEVOS USUARIOS (último mes)
+    # ============================================================
+    nuevos_usuarios = db.query(func.count(Usuario.id)).filter(
+        Usuario.created_at >= hace_30_dias,
+        Usuario.is_active == True
+    ).scalar() or 0
+
+    # ============================================================
+    # 2. NUEVAS FICHAS (último mes)
+    # ============================================================
+    nuevas_fichas = db.query(func.count(Ficha.id)).filter(
+        Ficha.created_at >= hace_30_dias,
+        Ficha.is_active == True
+    ).scalar() or 0
+
+    # ============================================================
+    # 3. INSTRUCTORES ACTIVOS
+    # ============================================================
+    instructores_activos = db.query(func.count(Usuario.id)).filter(
+        Usuario.rol_id == 3,  # Instructor
+        Usuario.is_active == True
+    ).scalar() or 0
+
+    # ============================================================
+    # 4. TOTAL APRENDICES
+    # ============================================================
+    total_aprendices = db.query(func.count(Usuario.id)).filter(
+        Usuario.rol_id == 4,  # Aprendiz
+        Usuario.is_active == True
+    ).scalar() or 0
+
+    # ============================================================
+    # 5. EVOLUCIÓN DE USUARIOS (últimos 6 meses)
+    # ============================================================
+    nombres_meses = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    evolucion = []
+    for i in range(5, -1, -1):
+        # Calcular inicio y fin de cada mes
+        fecha_ref = hoy - timedelta(days=30 * i)
+        inicio_mes = fecha_ref.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if inicio_mes.month == 12:
+            fin_mes = inicio_mes.replace(year=inicio_mes.year + 1, month=1)
+        else:
+            fin_mes = inicio_mes.replace(month=inicio_mes.month + 1)
+
+        cantidad = db.query(func.count(Usuario.id)).filter(
+            Usuario.created_at >= inicio_mes,
+            Usuario.created_at < fin_mes,
+            Usuario.is_active == True
+        ).scalar() or 0
+
+        evolucion.append({
+            "mes": nombres_meses[inicio_mes.month - 1],
+            "usuarios": cantidad
+        })
+
+    # ============================================================
+    # 6. DISTRIBUCIÓN DE ROLES
+    # ============================================================
+    por_rol_query = db.query(
+        Usuario.rol_id,
+        func.count(Usuario.id)
+    ).filter(Usuario.is_active == True).group_by(Usuario.rol_id).all()
+
+    nombres_roles = {
+        1: "Administradores",
+        2: "Coordinadores",
+        3: "Instructores",
+        4: "Aprendices",
+        5: "Apoyo Administrativo",
+        6: "Consulta",
+    }
+    distribucion_roles = []
+    for rol_id, cantidad in por_rol_query:
+        distribucion_roles.append({
+            "rol": nombres_roles.get(rol_id, f"Rol {rol_id}"),
+            "cantidad": cantidad
+        })
+
+    return {
+        "nuevos_usuarios_mes": nuevos_usuarios,
+        "nuevas_fichas_mes": nuevas_fichas,
+        "instructores_activos": instructores_activos,
+        "total_aprendices": total_aprendices,
+        "evolucion_usuarios": evolucion,
+        "distribucion_roles": distribucion_roles,
+    }

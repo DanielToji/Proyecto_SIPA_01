@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user, require_role
 from app.core.constants import Roles, RolesPermisos
-from app.models import Usuario, EstadoAsignacion
+from app.models import Usuario, EstadoAsignacion, ProcesoEtapaProductiva
 from app.modules.programas_fichas import crud, schemas
 
 router = APIRouter(tags=["programas", "fichas", "asignaciones"])
@@ -183,46 +183,48 @@ def eliminar_ficha(
     return None
 
 
-# ================== Asignaciones Instructor-Ficha ==================
-@router.post(
-    "/asignaciones",
-    response_model=schemas.AsignacionInstructorFichaOut,
-    status_code=status.HTTP_201_CREATED
-)
-def crear_asignacion(
-    asignacion: schemas.AsignacionInstructorFichaCreate,
+# ================== NUEVO: Aprendices por Ficha ==================
+@router.get("/fichas/{ficha_id}/aprendices")
+def listar_aprendices_por_ficha(
+    ficha_id: int,
     db: Session = Depends(get_db),
-    current_user: Usuario = Depends(require_role(*RolesPermisos.ESCRITURA))
+    current_user: Usuario = Depends(get_current_user)
 ):
-    """Asigna una ficha a un instructor. Si ya existía una asignación inactiva, la reactiva."""
-    ficha = crud.get_ficha(db, asignacion.ficha_id)
-    if not ficha or not ficha.is_active:
-        raise HTTPException(status_code=404, detail="Ficha no encontrada o inactiva")
+    """Obtiene todos los aprendices (procesos) de una ficha específica."""
+    # Verificar que la ficha existe
+    ficha = crud.get_ficha(db, ficha_id)
+    if not ficha:
+        raise HTTPException(status_code=404, detail="Ficha no encontrada")
 
-    instructor = db.query(Usuario).filter(
-        Usuario.id == asignacion.instructor_id,
-        Usuario.rol_id == Roles.INSTRUCTOR,
-        Usuario.is_active == True
-    ).first()
-    if not instructor:
-        raise HTTPException(status_code=400, detail="El usuario no es un instructor activo")
-
-    # Buscar cualquier asignación previa (activa o inactiva)
-    existente = crud.get_asignacion_por_ficha_instructor(
-        db, asignacion.ficha_id, asignacion.instructor_id
+    # Obtener todos los procesos activos de esa ficha
+    procesos = (
+        db.query(ProcesoEtapaProductiva)
+        .filter(
+            ProcesoEtapaProductiva.ficha_id == ficha_id,
+            ProcesoEtapaProductiva.is_active == True
+        )
+        .all()
     )
-    if existente:
-        if existente.is_active and existente.estado_asignacion == EstadoAsignacion.ACTIVA:
-            raise HTTPException(status_code=400, detail="La ficha ya está asignada a este instructor")
-        # Si la asignación está inactiva, reactivarla
-        return crud.reactivar_asignacion(db, existente)
 
-    data = asignacion.model_dump()
-    data["estado_asignacion"] = EstadoAsignacion.ACTIVA
-    data["is_active"] = True
-    return crud.create_asignacion(db, data)
+    # Formatear la respuesta
+    resultado = []
+    for p in procesos:
+        resultado.append({
+            "id": p.id,
+            "aprendiz_id": p.aprendiz_id,
+            "nombre": p.aprendiz_nombre or "Sin nombre",
+            "correo": p.aprendiz_email or "Sin correo",
+            "empresa": p.empresa_nombre or "Sin asignar",
+            "arl": p.arl or "Sin ARL",
+            "estado": p.estado or "ACTIVO",
+            "fecha_inicio": p.fecha_inicio.isoformat() if p.fecha_inicio else None,
+            "fecha_fin": p.fecha_fin.isoformat() if p.fecha_fin else None,
+        })
+
+    return resultado
 
 
+# ================== Asignaciones Instructor-Ficha ==================
 @router.post(
     "/asignaciones",
     response_model=schemas.AsignacionInstructorFichaOut,

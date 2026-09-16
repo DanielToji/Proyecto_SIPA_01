@@ -9,7 +9,7 @@ from slowapi.util import get_remote_address
 
 from app.core.config import settings
 
-# Importación de routers de todos los módulos
+# Importacion de routers de todos los modulos
 from app.modules.auth.router import router as auth_router
 from app.modules.usuarios.router import router as usuarios_router
 from app.modules.empresas.router import router as empresas_router
@@ -30,8 +30,7 @@ from app.modules.auditoria.router import router as auditoria_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):  
     """
-    Contexto de vida de la aplicación.
-    Se puede usar para inicializar servicios, conexiones o cargar datos.
+    Contexto de vida de la aplicacion.
     """
     yield
 
@@ -50,8 +49,7 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# CORS con lista blanca desde configuración
-# Si se usa "*" no se permite allow_credentials=True
+# CORS con lista blanca desde configuracion
 allow_credentials = "*" not in settings.CORS_ORIGINS
 app.add_middleware(
     CORSMiddleware,
@@ -65,7 +63,7 @@ app.add_middleware(
 @app.middleware("http")
 async def security_headers(request, call_next):
     """
-    Middleware para agregar cabeceras básicas de seguridad.
+    Middleware para agregar cabeceras basicas de seguridad.
     """
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
@@ -97,8 +95,7 @@ app.include_router(auditoria_router)
 @app.get("/health", tags=["health"])
 def health_check():
     """
-    Endpoint de salud para verificar que la aplicación está corriendo.
-    No requiere autenticación.
+    Endpoint de salud para verificar que la aplicacion esta corriendo.
     """
     return {"status": "ok", "message": f"{settings.APP_NAME} running"}
 
@@ -106,7 +103,7 @@ def health_check():
 @app.get("/", tags=["root"])
 def root():
     """
-    Endpoint raíz informativo.
+    Endpoint raiz informativo.
     """
     return {
         "app": settings.APP_NAME,
