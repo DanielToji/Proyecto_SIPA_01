@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles  # 🔥 NUEVO
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
@@ -92,6 +93,12 @@ app.include_router(busqueda_router)
 app.include_router(auditoria_router)
 
 
+# 🔥 NUEVO: Servir carpeta de evidencias (PDFs subidos)
+# Crear la carpeta si no existe (por seguridad)
+os.makedirs("evidencias", exist_ok=True)
+app.mount("/evidencias", StaticFiles(directory="evidencias"), name="evidencias")
+
+
 @app.get("/health", tags=["health"])
 def health_check():
     """
@@ -101,7 +108,7 @@ def health_check():
 
 
 @app.get("/", tags=["root"])
-def root():
+def endpoint_raiz():
     """
     Endpoint raiz informativo.
     """

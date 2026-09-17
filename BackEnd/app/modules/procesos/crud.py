@@ -39,8 +39,11 @@ def list_procesos(
     limit: int = 100,
 ) -> list[ProcesoEtapaProductiva]:
     query = db.query(ProcesoEtapaProductiva)
+    
+    # 🔥 SIEMPRE filtrar por is_active
     if solo_activos:
         query = query.filter(ProcesoEtapaProductiva.is_active == True)
+    
     if aprendiz_id:
         query = query.filter(ProcesoEtapaProductiva.aprendiz_id == aprendiz_id)
     if ficha_id:
@@ -63,6 +66,7 @@ def list_procesos(
         query = query.filter(ProcesoEtapaProductiva.fecha_fin >= fecha_fin_desde)
     if fecha_fin_hasta:
         query = query.filter(ProcesoEtapaProductiva.fecha_fin <= fecha_fin_hasta)
+    
     return query.offset(skip).limit(limit).all()
 
 

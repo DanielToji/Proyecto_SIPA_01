@@ -91,7 +91,7 @@ class Rol(Base):
     descripcion = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -130,7 +130,7 @@ class ProgramaFormacion(Base):
     descripcion = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -167,7 +167,8 @@ class AsignacionInstructorFicha(Base):
     estado_asignacion = Column(ENUM('ACTIVA', 'INACTIVA', name='estado_asignacion_t', schema='etapa_productiva'), default='ACTIVA')
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    # 🔥 FIX: se agregó server_default=func.now()
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -179,7 +180,7 @@ class ModalidadEP(Base):
     descripcion = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -192,10 +193,10 @@ class Empresa(Base):
     direccion = Column(String(200))
     telefono = Column(String(20))
     correo_contacto = Column(String(150))
-    arl = Column(String(100), nullable=True)          # ← NUEVO CAMPO
+    arl = Column(String(100), nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -210,7 +211,7 @@ class CoordinadorEmpresa(Base):
     telefono = Column(String(20))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -226,7 +227,7 @@ class EvidenciaArchivo(Base):
     uploaded_by = Column(BigInteger, ForeignKey("etapa_productiva.usuarios.id"))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -256,13 +257,14 @@ class ProcesoEtapaProductiva(Base):
     observaciones = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
     # Relaciones
     aprendiz = relationship("Usuario", foreign_keys=[aprendiz_id])
     instructor = relationship("Usuario", foreign_keys=[instructor_id])
-    empresa = relationship("Empresa", foreign_keys=[empresa_id])   # ← NUEVA RELACIÓN
+    empresa = relationship("Empresa", foreign_keys=[empresa_id])
+    ficha = relationship("Ficha", foreign_keys=[ficha_id])
 
     # ---- Propiedades calculadas para el frontend ----
     @property
@@ -276,12 +278,28 @@ class ProcesoEtapaProductiva(Base):
         return self.aprendiz.email if self.aprendiz else None
 
     @property
+    def aprendiz_documento(self) -> str | None:
+        if self.aprendiz and self.aprendiz.documento_identidad:
+            tipo = self.aprendiz.tipo_documento
+            tipo_str = tipo.value if hasattr(tipo, 'value') else (tipo or '')
+            return f"{tipo_str} {self.aprendiz.documento_identidad}".strip()
+        return None
+
+    @property
+    def aprendiz_telefono(self) -> str | None:
+        return self.aprendiz.telefono if self.aprendiz else None
+
+    @property
     def empresa_nombre(self) -> str | None:
         return self.empresa.razon_social if self.empresa else None
 
     @property
     def arl(self) -> str | None:
         return self.empresa.arl if self.empresa else None
+
+    @property
+    def ficha_numero(self) -> str | None:
+        return self.ficha.numero_ficha if self.ficha else None
 
 
 class Bitacora(Base):
@@ -306,7 +324,7 @@ class Bitacora(Base):
     archivo_f147_url = Column(String(500))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
     proceso = relationship("ProcesoEtapaProductiva", foreign_keys=[proceso_id])
 
@@ -326,7 +344,7 @@ class Charla(Base):
     created_by = Column(BigInteger, ForeignKey("etapa_productiva.usuarios.id"))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -345,7 +363,7 @@ class AsistenciaCharla(Base):
     observaciones = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -366,7 +384,7 @@ class ReunionSeguimiento(Base):
     archivo_f023_url = Column(String(500))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -381,7 +399,7 @@ class NovedadProceso(Base):
     documento_soporte_url = Column(String(500))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -398,7 +416,7 @@ class ChecklistDocumentoProceso(Base):
     evidencia_archivo_id = Column(BigInteger, ForeignKey("etapa_productiva.evidencias_archivos.id"))
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -421,7 +439,7 @@ class MedidasFormativasProceso(Base):
     observaciones = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -439,7 +457,7 @@ class NotificacionMensaje(Base):
     error_envio = Column(Text)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 
@@ -454,7 +472,7 @@ class BitacoraEvidencia(Base):
     evidencia_archivo_id = Column(BigInteger, ForeignKey("etapa_productiva.evidencias_archivos.id"), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True))
 
 

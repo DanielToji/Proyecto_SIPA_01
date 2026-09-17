@@ -27,6 +27,7 @@ class ProcesoUpdate(BaseModel):
     empresa_id: Optional[int] = None
     coordinador_empresa_id: Optional[int] = None
     instructor_id: Optional[int] = None
+    modalidad_id: Optional[int] = None  # 🔥 NUEVO
     fecha_inicio: Optional[date] = None
     fecha_fin: Optional[date] = None
     estado: Optional[EstadoProceso] = None
@@ -52,8 +53,13 @@ class ProcesoOut(ProcesoBase):
     # Campos calculados para el frontend
     aprendiz_nombre: Optional[str] = None
     aprendiz_email: Optional[str] = None
+    aprendiz_documento: Optional[str] = None
+    aprendiz_telefono: Optional[str] = None
     empresa_nombre: Optional[str] = None
     arl: Optional[str] = None
+    ficha_numero: Optional[str] = None
+    modalidad_nombre: Optional[str] = None  # 🔥 NUEVO
+    programa_nombre: Optional[str] = None  # 🔥 NUEVO
 
 
 # ================== Checklist Documental ==================
@@ -86,9 +92,8 @@ class ChecklistDocumentoOut(ChecklistDocumentoBase):
 
 # ================== Evaluación Final ==================
 class EvaluacionFinalUpdate(BaseModel):
-    """Actualización de evaluación final del proceso."""
-    nota_empresa: Optional[float] = Field(None, ge=0, le=10, description="Nota asignada por la empresa (0-10)")
-    nota_instructor: Optional[float] = Field(None, ge=0, le=10, description="Nota asignada por el instructor (0-10)")
+    nota_empresa: Optional[float] = Field(None, ge=0, le=10)
+    nota_instructor: Optional[float] = Field(None, ge=0, le=10)
     estado_sofia: Optional[EstadoSofia] = None
     estado: Optional[EstadoProceso] = None
     observaciones: Optional[str] = Field(None, max_length=1000)

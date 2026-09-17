@@ -27,13 +27,14 @@ TIPOS_IMPORTACION = {
     "fichas": "Fichas de formación",
     "asignaciones": "Asignaciones instructor-ficha",
     "procesos": "Procesos de etapa productiva",
+    "empresas": "Empresas (con NIT, razón social, ARL)",
+    "procesos-alternativas": "Actualizar alternativa (modalidad) de procesos existentes",
 }
 
 
 def leer_archivo(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
     """
     Lee un archivo CSV o Excel y lo convierte en una lista de diccionarios.
-    Retorna la lista de filas.
     """
     if filename.lower().endswith(".csv"):
         content = file_bytes.decode("utf-8")
@@ -51,7 +52,7 @@ def leer_archivo(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
         result = []
         for row in rows[1:]:
             if all(cell is None or cell == "" for cell in row):
-                continue  # ignorar filas vacías
+                continue
             row_dict = {
                 headers[i]: row[i] if i < len(row) else None
                 for i in range(len(headers))
@@ -68,13 +69,12 @@ def leer_archivo(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
 # ============================================================
 
 def validar_fila_usuario(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-    """Valida una fila de usuario. Retorna (ok, mensaje_error, datos_procesados)."""
     campos_requeridos = ["nombre", "apellido", "email", "password_hash", "rol_id"]
     for campo in campos_requeridos:
         if not data.get(campo):
             return False, f"Campo requerido faltante: {campo}", None
 
-    email = data["email"].strip()
+    email = str(data["email"]).strip()
     if "@" not in email or "." not in email:
         return False, f"Email inválido: {email}", None
 
@@ -83,14 +83,13 @@ def validar_fila_usuario(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any
     except (ValueError, TypeError):
         return False, f"rol_id no es un número: {data['rol_id']}", None
 
-    # El password se recibe plano y se hashea
-    password_plano = data["password_hash"]
+    password_plano = str(data["password_hash"])
     if len(password_plano) < 8:
         return False, "La contraseña debe tener al menos 8 caracteres", None
 
     datos_procesados = {
-        "nombre": data["nombre"].strip(),
-        "apellido": data["apellido"].strip(),
+        "nombre": str(data["nombre"]).strip(),
+        "apellido": str(data["apellido"]).strip(),
         "email": email,
         "password_hash": get_password_hash(password_plano),
         "documento_identidad": data.get("documento_identidad") or None,
@@ -102,7 +101,6 @@ def validar_fila_usuario(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any
 
 
 def validar_fila_ficha(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-    """Valida una fila de ficha. Retorna (ok, mensaje_error, datos_procesados)."""
     campos_requeridos = ["programa_id", "numero_ficha", "fecha_inicio", "fecha_fin"]
     for campo in campos_requeridos:
         if not data.get(campo):
@@ -114,8 +112,8 @@ def validar_fila_ficha(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]
         return False, f"programa_id no es un número: {data['programa_id']}", None
 
     try:
-        fecha_inicio = date.fromisoformat(data["fecha_inicio"])
-        fecha_fin = date.fromisoformat(data["fecha_fin"])
+        fecha_inicio = date.fromisoformat(str(data["fecha_inicio"]))
+        fecha_fin = date.fromisoformat(str(data["fecha_fin"]))
         if fecha_fin < fecha_inicio:
             return False, "fecha_fin no puede ser anterior a fecha_inicio", None
     except ValueError:
@@ -123,16 +121,18 @@ def validar_fila_ficha(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]
 
     datos_procesados = {
         "programa_id": programa_id,
-        "numero_ficha": data["numero_ficha"].strip(),
+        "numero_ficha": str(data["numero_ficha"]).strip(),
         "fecha_inicio": fecha_inicio,
         "fecha_fin": fecha_fin,
+        "nivel": str(data.get("nivel", "Tecnólogo")).strip(),
+        "jornada": str(data.get("jornada", "Mañana")).strip(),
+        "aprendices_esperados": int(data.get("aprendices_esperados", 0) or 0),
         "is_active": True,
     }
     return True, "", datos_procesados
 
 
 def validar_fila_asignacion(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-    """Valida una fila de asignación. Retorna (ok, mensaje_error, datos_procesados)."""
     campos_requeridos = ["ficha_id", "instructor_id"]
     for campo in campos_requeridos:
         if not data.get(campo):
@@ -154,7 +154,6 @@ def validar_fila_asignacion(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, 
 
 
 def validar_fila_proceso(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
-    """Valida una fila de proceso. Retorna (ok, mensaje_error, datos_procesados)."""
     campos_requeridos = ["aprendiz_id", "ficha_id", "modalidad_id", "instructor_id",
                          "fecha_inicio", "fecha_fin"]
     for campo in campos_requeridos:
@@ -170,14 +169,13 @@ def validar_fila_proceso(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any
         return False, "IDs deben ser numéricos", None
 
     try:
-        fecha_inicio = date.fromisoformat(data["fecha_inicio"])
-        fecha_fin = date.fromisoformat(data["fecha_fin"])
+        fecha_inicio = date.fromisoformat(str(data["fecha_inicio"]))
+        fecha_fin = date.fromisoformat(str(data["fecha_fin"]))
         if fecha_fin < fecha_inicio:
             return False, "fecha_fin no puede ser anterior a fecha_inicio", None
     except ValueError:
         return False, "Fechas inválidas, use formato YYYY-MM-DD", None
 
-    # Convertir opcionales empresa_id y coordinador_empresa_id
     empresa_id = None
     coordinador_empresa_id = None
 
@@ -214,12 +212,62 @@ def validar_fila_proceso(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any
     return True, "", datos_procesados
 
 
+def validar_fila_empresa(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
+    """Valida una fila de empresa."""
+    campos_requeridos = ["nit", "razon_social"]
+    for campo in campos_requeridos:
+        if not data.get(campo):
+            return False, f"Campo requerido faltante: {campo}", None
+
+    nit = str(data["nit"]).strip()
+    razon_social = str(data["razon_social"]).strip()
+
+    if len(nit) < 5:
+        return False, f"NIT inválido (muy corto): {nit}", None
+
+    datos_procesados = {
+        "nit": nit,
+        "razon_social": razon_social,
+        "direccion": data.get("direccion") or None,
+        "telefono": str(data.get("telefono") or "").strip() or None,
+        "correo_contacto": data.get("correo_contacto") or data.get("correo") or None,
+        "arl": str(data.get("arl") or "SURA").strip(),
+        "is_active": True,
+    }
+    return True, "", datos_procesados
+
+
+def validar_fila_proceso_alternativa(data: Dict[str, Any]) -> Tuple[bool, str, Dict[str, Any]]:
+    """
+    Valida una fila para actualizar la alternativa (modalidad) de un proceso.
+    Acepta documento o email del aprendiz, y el nombre de la modalidad.
+    """
+    documento = data.get("documento") or data.get("documento_identidad")
+    email = data.get("email")
+    modalidad_nombre = data.get("modalidad") or data.get("modalidad_nombre")
+
+    if not documento and not email:
+        return False, "Se requiere 'documento' o 'email' del aprendiz", None
+
+    if not modalidad_nombre:
+        return False, "Campo requerido faltante: modalidad", None
+
+    datos_procesados = {
+        "documento": str(documento).strip() if documento else None,
+        "email": str(email).strip().lower() if email else None,
+        "modalidad": str(modalidad_nombre).strip(),
+    }
+    return True, "", datos_procesados
+
+
 # Mapeo de tipo_importacion a su función de validación
 VALIDACIONES = {
     "usuarios": validar_fila_usuario,
     "fichas": validar_fila_ficha,
     "asignaciones": validar_fila_asignacion,
     "procesos": validar_fila_proceso,
+    "empresas": validar_fila_empresa,
+    "procesos-alternativas": validar_fila_proceso_alternativa,
 }
 
 
@@ -228,13 +276,12 @@ def importar_datos(
     tipo: str,
     filas: List[Dict[str, Any]]
 ) -> Tuple[int, int, List[RowError]]:
-    """
-    Procesa las filas y las inserta en la base de datos.
-    Usa transacciones anidadas (savepoints) para aislar cada fila.
-    Retorna (filas_insertadas, filas_con_error, errores).
-    """
     if tipo not in VALIDACIONES:
         raise ValueError(f"Tipo de importación no soportado: {tipo}")
+
+    # 🔥 CASO ESPECIAL: actualizar alternativas de procesos existentes
+    if tipo == "procesos-alternativas":
+        return _importar_alternativas(db, filas)
 
     filas_insertadas = 0
     filas_con_error = 0
@@ -250,35 +297,98 @@ def importar_datos(
             continue
 
         try:
-            # Punto de guardado para revertir solo esta fila si falla
             with db.begin_nested():
                 nuevo = _crear_instancia_validada(db, tipo, datos)
                 db.add(nuevo)
-
             filas_insertadas += 1
-
         except Exception as e:
-            # El savepoint revirtió automáticamente esta fila
             filas_con_error += 1
             errores.append(RowError(fila=fila_num, mensaje=str(e), datos=fila))
 
-    # Commit final para consolidar todas las filas exitosas
     db.commit()
     return filas_insertadas, filas_con_error, errores
 
 
+def _importar_alternativas(
+    db: Session,
+    filas: List[Dict[str, Any]]
+) -> Tuple[int, int, List[RowError]]:
+    """
+    Actualiza la modalidad_id de los procesos existentes.
+    Busca el proceso por documento o email del aprendiz.
+    """
+    actualizados = 0
+    con_error = 0
+    errores: List[RowError] = []
+    fila_num = 1
+
+    for fila in filas:
+        fila_num += 1
+
+        valida, msg_error, datos = validar_fila_proceso_alternativa(fila)
+        if not valida:
+            con_error += 1
+            errores.append(RowError(fila=fila_num, mensaje=msg_error, datos=fila))
+            continue
+
+        try:
+            with db.begin_nested():
+                # 1. Buscar el aprendiz por documento o email
+                aprendiz = None
+                if datos["documento"]:
+                    aprendiz = db.query(Usuario).filter(
+                        Usuario.documento_identidad == datos["documento"],
+                        Usuario.rol_id == 4,
+                        Usuario.is_active == True
+                    ).first()
+                elif datos["email"]:
+                    aprendiz = db.query(Usuario).filter(
+                        Usuario.email == datos["email"],
+                        Usuario.rol_id == 4,
+                        Usuario.is_active == True
+                    ).first()
+
+                if not aprendiz:
+                    raise ValueError(
+                        f"Aprendiz no encontrado: {datos['documento'] or datos['email']}"
+                    )
+
+                # 2. Buscar la modalidad por nombre (case-insensitive)
+                modalidad = db.query(ModalidadEP).filter(
+                    ModalidadEP.nombre.ilike(datos["modalidad"]),
+                    ModalidadEP.is_active == True
+                ).first()
+
+                if not modalidad:
+                    raise ValueError(f"Modalidad no encontrada: {datos['modalidad']}")
+
+                # 3. Buscar el proceso activo del aprendiz
+                proceso = db.query(ProcesoEtapaProductiva).filter(
+                    ProcesoEtapaProductiva.aprendiz_id == aprendiz.id,
+                    ProcesoEtapaProductiva.is_active == True
+                ).first()
+
+                if not proceso:
+                    raise ValueError(f"El aprendiz no tiene proceso activo")
+
+                # 4. Actualizar la modalidad
+                proceso.modalidad_id = modalidad.id
+
+            actualizados += 1
+        except Exception as e:
+            con_error += 1
+            errores.append(RowError(fila=fila_num, mensaje=str(e), datos=fila))
+
+    db.commit()
+    return actualizados, con_error, errores
+
+
 def _crear_instancia_validada(db: Session, tipo: str, datos: Dict[str, Any]):
-    """
-    Crea la instancia SQLAlchemy correspondiente al tipo de importación,
-    validando previamente las claves foráneas y reglas de negocio.
-    Lanza ValueError con mensaje claro si algo falla.
-    """
     if tipo == "usuarios":
         rol_id = datos.get("rol_id")
         if not db.query(Rol).filter(Rol.id == rol_id, Rol.is_active == True).first():
             raise ValueError(f"Rol ID {rol_id} no existe o está inactivo")
 
-        # Validar duplicidad
         if db.query(Usuario).filter(
             (Usuario.email == datos["email"]) |
             (Usuario.documento_identidad == datos.get("documento_identidad"))
@@ -354,7 +464,6 @@ def _crear_instancia_validada(db: Session, tipo: str, datos: Dict[str, Any]):
         ).first():
             raise ValueError(f"Instructor ID {instructor_id} no es un instructor activo")
 
-        # Validar empresa y coordinador si vienen
         if empresa_id is not None:
             if not db.query(Empresa).filter(Empresa.id == empresa_id, Empresa.is_active == True).first():
                 raise ValueError(f"Empresa ID {empresa_id} no existe o está inactiva")
@@ -368,6 +477,14 @@ def _crear_instancia_validada(db: Session, tipo: str, datos: Dict[str, Any]):
             raise ValueError("Se indicó coordinador_empresa_id sin empresa_id")
 
         return ProcesoEtapaProductiva(**datos)
+
+    elif tipo == "empresas":
+        nit = datos.get("nit")
+
+        if db.query(Empresa).filter(Empresa.nit == nit).first():
+            raise ValueError(f"Ya existe una empresa con NIT {nit}")
+
+        return Empresa(**datos)
 
     else:
         raise ValueError(f"Tipo no soportado: {tipo}")

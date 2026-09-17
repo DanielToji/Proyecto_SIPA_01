@@ -30,11 +30,6 @@ def crear_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """
-    Crea un proceso de etapa productiva.
-    Solo administradores y coordinadores pueden crearlo.
-    """
-    # Validar aprendiz (debe existir y ser rol aprendiz)
     aprendiz = db.query(Usuario).filter(
         Usuario.id == proceso.aprendiz_id,
         Usuario.rol_id == Roles.APRENDIZ,
@@ -43,12 +38,10 @@ def crear_proceso(
     if not aprendiz:
         raise HTTPException(status_code=400, detail="El aprendiz no es válido o no existe")
 
-    # Validar ficha
     ficha = db.query(Ficha).filter(Ficha.id == proceso.ficha_id, Ficha.is_active == True).first()
     if not ficha:
         raise HTTPException(status_code=404, detail="Ficha no encontrada")
 
-    # Validar modalidad
     modalidad = db.query(ModalidadEP).filter(
         ModalidadEP.id == proceso.modalidad_id,
         ModalidadEP.is_active == True
@@ -56,7 +49,6 @@ def crear_proceso(
     if not modalidad:
         raise HTTPException(status_code=404, detail="Modalidad no encontrada")
 
-    # Validar instructor (debe existir y ser rol instructor)
     instructor = db.query(Usuario).filter(
         Usuario.id == proceso.instructor_id,
         Usuario.rol_id == Roles.INSTRUCTOR,
@@ -65,7 +57,6 @@ def crear_proceso(
     if not instructor:
         raise HTTPException(status_code=400, detail="El instructor no es válido o no existe")
 
-    # Validar empresa y coordinador (ambos nulos o ambos no nulos)
     if (proceso.empresa_id is None) != (proceso.coordinador_empresa_id is None):
         raise HTTPException(
             status_code=400,
@@ -119,13 +110,14 @@ def listar_procesos(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Lista procesos con filtros. Instructor solo ve sus asignados; aprendiz solo los suyos."""
+    print(f"🔍 [BACKEND] listar_procesos - aprendiz_id={aprendiz_id}, solo_activos={solo_activos}, rol={current_user.rol_id}")
+    
     if current_user.rol_id == Roles.INSTRUCTOR:
         instructor_id = current_user.id
     elif current_user.rol_id == Roles.APRENDIZ:
         aprendiz_id = current_user.id
 
-    return crud.list_procesos(
+    result = crud.list_procesos(
         db,
         aprendiz_id=aprendiz_id,
         ficha_id=ficha_id,
@@ -142,6 +134,8 @@ def listar_procesos(
         skip=skip,
         limit=limit,
     )
+    print(f"🔍 [BACKEND] Procesos encontrados: {len(result)}")
+    return result
 
 
 @router.get("/{proceso_id}/avance", response_model=schemas.ProcesoAvance)
@@ -150,12 +144,10 @@ def obtener_avance_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Retorna el porcentaje de avance del proceso según momentos completados."""
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
 
-    # Control de acceso
     if current_user.rol_id == Roles.INSTRUCTOR and proceso.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="No autorizado para ver este proceso")
     if current_user.rol_id == Roles.APRENDIZ and proceso.aprendiz_id != current_user.id:
@@ -171,11 +163,6 @@ def actualizar_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Actualiza un proceso.
-    - Admin/Coordinador pueden actualizar cualquier campo.
-    - Instructor solo puede actualizar notas y observaciones de sus procesos asignados.
-    """
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
@@ -183,7 +170,6 @@ def actualizar_proceso(
     if current_user.rol_id == Roles.INSTRUCTOR:
         if proceso.instructor_id != current_user.id:
             raise HTTPException(status_code=403, detail="No es el instructor asignado a este proceso")
-        # Instructor solo puede modificar campos de notas/observaciones
         update_data = {}
         if datos.nota_instructor is not None:
             update_data["nota_instructor"] = datos.nota_instructor
@@ -196,9 +182,7 @@ def actualizar_proceso(
         if not update_data:
             raise HTTPException(status_code=400, detail="No tiene permisos para modificar esos campos")
     else:
-        # Admin/Coordinador: validar empresa/coordinador si se cambian
         if datos.empresa_id is not None or datos.coordinador_empresa_id is not None:
-            # Si viene uno, debe venir el otro
             nueva_empresa = datos.empresa_id if datos.empresa_id is not None else proceso.empresa_id
             nueva_coord = datos.coordinador_empresa_id if datos.coordinador_empresa_id is not None else proceso.coordinador_empresa_id
             if (nueva_empresa is None) != (nueva_coord is None):
@@ -216,6 +200,15 @@ def actualizar_proceso(
                 ).first():
                     raise HTTPException(status_code=404, detail="Coordinador no válido para la empresa")
 
+        # 🔥 NUEVO: Validar modalidad si viene
+        if datos.modalidad_id is not None:
+            modalidad = db.query(ModalidadEP).filter(
+                ModalidadEP.id == datos.modalidad_id,
+                ModalidadEP.is_active == True
+            ).first()
+            if not modalidad:
+                raise HTTPException(status_code=404, detail="Modalidad no encontrada")
+
         update_data = datos.model_dump(exclude_unset=True)
 
     return crud.update_proceso(db, proceso, update_data)
@@ -227,7 +220,6 @@ def eliminar_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """Desactiva un proceso (soft delete)."""
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
@@ -247,11 +239,6 @@ def crear_item_checklist(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Agrega un documento al checklist de un proceso.
-    - Admin/Coordinador pueden agregar cualquier documento.
-    - Instructor solo si es el asignado al proceso.
-    """
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
@@ -259,7 +246,6 @@ def crear_item_checklist(
     if current_user.rol_id == Roles.INSTRUCTOR and proceso.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="No es el instructor asignado a este proceso")
 
-    # Validar que no exista ya el mismo tipo de documento para el proceso
     existente = crud.get_checklist_item_by_tipo(db, proceso_id, item.tipo_documento)
     if existente:
         raise HTTPException(status_code=400, detail="Ya existe un checklist para ese tipo de documento")
@@ -280,12 +266,10 @@ def listar_checklist_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Lista el checklist documental de un proceso."""
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
 
-    # Aprendiz solo su propio proceso; instructor solo asignado
     if current_user.rol_id == Roles.APRENDIZ and proceso.aprendiz_id != current_user.id:
         raise HTTPException(status_code=403, detail="No autorizado para ver este proceso")
     if current_user.rol_id == Roles.INSTRUCTOR and proceso.instructor_id != current_user.id:
@@ -304,11 +288,6 @@ def actualizar_item_checklist(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Actualiza un item del checklist documental.
-    - Admin/Coordinador: acceso total.
-    - Instructor: solo si está asignado al proceso.
-    """
     item = crud.get_checklist_item(db, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item de checklist no encontrado")
@@ -330,7 +309,6 @@ def eliminar_item_checklist(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Desactiva un item del checklist (soft delete)."""
     item = crud.get_checklist_item(db, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Item de checklist no encontrado")
@@ -342,7 +320,8 @@ def eliminar_item_checklist(
     crud.soft_delete_checklist_item(db, item)
     return None
 
-    # ================== Endpoints de Evaluación Final ==================
+
+# ================== Evaluación Final ==================
 @router.patch(
     "/{proceso_id}/evaluacion",
     response_model=schemas.EvaluacionFinalOut
@@ -353,35 +332,23 @@ def evaluacion_final(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Registra o actualiza la evaluación final del proceso (notas y estado SOFIA).
-    Reglas de acceso:
-    - Admin y Coordinador pueden actualizar todas las notas y estados.
-    - Instructor solo puede actualizar `nota_instructor`, `estado_sofia`, `estado` y `observaciones`
-      de sus procesos asignados. No puede modificar `nota_empresa`.
-    """
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
 
-    # Control de acceso según rol
     if current_user.rol_id == Roles.INSTRUCTOR:
         if proceso.instructor_id != current_user.id:
             raise HTTPException(status_code=403, detail="No es el instructor asignado a este proceso")
-        # El instructor no puede modificar nota_empresa
         if datos.nota_empresa is not None:
             raise HTTPException(status_code=403, detail="No tiene permisos para modificar la nota de la empresa")
     elif current_user.rol_id not in [Roles.ADMIN, Roles.COORDINADOR]:
         raise HTTPException(status_code=403, detail="No autorizado para realizar evaluación")
 
-    # Construir datos a actualizar
     update_data = datos.model_dump(exclude_unset=True)
     if not update_data:
         raise HTTPException(status_code=400, detail="Debe enviar al menos un campo para actualizar")
 
-    # Validar reglas de negocio: si estado_sofia = APROBADO, las notas deben existir y ser >= 3.0
     if datos.estado_sofia == EstadoSofia.APROBADO:
-        # Se usa la nota que se está estableciendo o la existente
         nota_empresa_final = datos.nota_empresa if datos.nota_empresa is not None else proceso.nota_empresa
         nota_instructor_final = datos.nota_instructor if datos.nota_instructor is not None else proceso.nota_instructor
         if nota_empresa_final is None or nota_instructor_final is None:
@@ -395,12 +362,9 @@ def evaluacion_final(
                 detail="Las notas deben ser iguales o superiores a 3.0 para aprobar"
             )
 
-    # Si se cambia estado a FINALIZADO, debe haber notas y estado_sofia definido
-    # Si se cambia estado a FINALIZADO, se debe garantizar que ambas notas existan
     if datos.estado == EstadoProceso.FINALIZADO:
         nota_empresa_final = datos.nota_empresa if datos.nota_empresa is not None else proceso.nota_empresa
         nota_instructor_final = datos.nota_instructor if datos.nota_instructor is not None else proceso.nota_instructor
-
         if nota_empresa_final is None or nota_instructor_final is None:
             raise HTTPException(
                 status_code=400,
@@ -411,7 +375,7 @@ def evaluacion_final(
     return proceso_actualizado
 
 
-# ================== Endpoints de Novedades ==================
+# ================== Novedades ==================
 @router.post(
     "/{proceso_id}/novedades",
     response_model=schemas.NovedadProcesoOut,
@@ -423,11 +387,6 @@ def crear_novedad(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Registra una novedad (renuncia, incapacidad, prórroga, etc.) para un proceso.
-    - Admin y Coordinador pueden crear cualquier novedad.
-    - Instructor solo para sus procesos asignados.
-    """
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
@@ -454,17 +413,10 @@ def listar_novedades_proceso(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Lista novedades de un proceso específico.
-    - Admin/Coordinador ven todas.
-    - Instructor solo si está asignado al proceso.
-    - Aprendiz solo si es su propio proceso.
-    """
     proceso = crud.get_proceso(db, proceso_id)
     if not proceso:
         raise HTTPException(status_code=404, detail="Proceso no encontrado")
 
-    # Control de acceso
     if current_user.rol_id == Roles.INSTRUCTOR and proceso.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="No autorizado para ver estas novedades")
     if current_user.rol_id == Roles.APRENDIZ and proceso.aprendiz_id != current_user.id:
@@ -484,7 +436,6 @@ def obtener_novedad(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Obtiene una novedad por su ID con control de acceso."""
     novedad = crud.get_novedad(db, novedad_id)
     if not novedad:
         raise HTTPException(status_code=404, detail="Novedad no encontrada")
@@ -505,11 +456,6 @@ def actualizar_novedad(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Actualiza una novedad.
-    - Admin/Coordinador: acceso total.
-    - Instructor: solo si está asignado al proceso de la novedad.
-    """
     novedad = crud.get_novedad(db, novedad_id)
     if not novedad:
         raise HTTPException(status_code=404, detail="Novedad no encontrada")
@@ -528,11 +474,6 @@ def eliminar_novedad(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """
-    Desactiva una novedad (soft delete).
-    - Admin/Coordinador: acceso total.
-    - Instructor: solo si está asignado al proceso.
-    """
     novedad = crud.get_novedad(db, novedad_id)
     if not novedad:
         raise HTTPException(status_code=404, detail="Novedad no encontrada")

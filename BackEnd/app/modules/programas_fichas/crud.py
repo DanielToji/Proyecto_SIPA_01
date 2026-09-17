@@ -7,6 +7,7 @@ from app.models import (
     Ficha,
     AsignacionInstructorFicha,
     EstadoAsignacion,
+    ProcesoEtapaProductiva,
 )
 
 
@@ -110,6 +111,19 @@ def soft_delete_ficha(db: Session, ficha: Ficha) -> Ficha:
     return ficha
 
 
+# ================== Aprendices por Ficha ==================
+def get_aprendices_por_ficha(db: Session, ficha_id: int) -> list[ProcesoEtapaProductiva]:
+    """Obtiene todos los procesos (aprendices) activos de una ficha."""
+    return (
+        db.query(ProcesoEtapaProductiva)
+        .filter(
+            ProcesoEtapaProductiva.ficha_id == ficha_id,
+            ProcesoEtapaProductiva.is_active == True
+        )
+        .all()
+    )
+
+
 # ================== Asignación Instructor-Ficha ==================
 def get_asignacion_por_ficha_instructor(
     db: Session,
@@ -151,6 +165,7 @@ def list_asignaciones(
     if solo_activas:
         query = query.filter(AsignacionInstructorFicha.is_active == True)
     return query.offset(skip).limit(limit).all()
+
 
 def create_asignacion(db: Session, data: dict) -> AsignacionInstructorFicha:
     asignacion = AsignacionInstructorFicha(**data)

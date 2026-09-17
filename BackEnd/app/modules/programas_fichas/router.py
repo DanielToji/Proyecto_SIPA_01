@@ -19,7 +19,6 @@ def crear_programa(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(RolesPermisos.ADMIN, RolesPermisos.COORDINADOR))
 ):
-    """Crea un nuevo programa de formación."""
     if crud.get_programa_by_codigo(db, programa.codigo):
         raise HTTPException(status_code=400, detail="Ya existe un programa con ese código")
     return crud.create_programa(db, programa.model_dump())
@@ -34,7 +33,6 @@ def listar_programas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Lista programas de formación con búsqueda y paginación."""
     return crud.list_programas(db, skip=skip, limit=limit, solo_activos=solo_activos, search=search)
 
 
@@ -44,7 +42,6 @@ def obtener_programa(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Obtiene un programa por su ID."""
     programa = crud.get_programa(db, programa_id)
     if not programa:
         raise HTTPException(status_code=404, detail="Programa no encontrado")
@@ -58,7 +55,6 @@ def actualizar_programa(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """Actualiza un programa de formación."""
     programa = crud.get_programa(db, programa_id)
     if not programa:
         raise HTTPException(status_code=404, detail="Programa no encontrado")
@@ -77,7 +73,6 @@ def eliminar_programa(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """Desactiva un programa de formación (soft delete)."""
     programa = crud.get_programa(db, programa_id)
     if not programa:
         raise HTTPException(status_code=404, detail="Programa no encontrado")
@@ -92,7 +87,6 @@ def crear_ficha(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(*RolesPermisos.ESCRITURA))
 ):
-    """Crea una nueva ficha."""
     if crud.get_ficha_by_numero(db, ficha.numero_ficha):
         raise HTTPException(status_code=400, detail="Ya existe una ficha con ese número")
 
@@ -116,7 +110,6 @@ def listar_fichas(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Lista fichas con filtros por programa y número."""
     return crud.list_fichas(
         db, skip=skip, limit=limit,
         solo_activas=solo_activas,
@@ -131,7 +124,6 @@ def obtener_ficha(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Obtiene una ficha por su ID."""
     ficha = crud.get_ficha(db, ficha_id)
     if not ficha:
         raise HTTPException(status_code=404, detail="Ficha no encontrada")
@@ -145,7 +137,6 @@ def actualizar_ficha(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(*RolesPermisos.ESCRITURA))
 ):
-    """Actualiza una ficha existente."""
     ficha = crud.get_ficha(db, ficha_id)
     if not ficha:
         raise HTTPException(status_code=404, detail="Ficha no encontrada")
@@ -159,7 +150,6 @@ def actualizar_ficha(
         if not programa or not programa.is_active:
             raise HTTPException(status_code=400, detail="El programa de formación no existe o está inactivo")
 
-    # Validar fechas si se actualizan parcialmente
     nueva_fecha_inicio = datos.fecha_inicio if datos.fecha_inicio else ficha.fecha_inicio
     nueva_fecha_fin = datos.fecha_fin if datos.fecha_fin else ficha.fecha_fin
     if nueva_fecha_fin < nueva_fecha_inicio:
@@ -175,7 +165,6 @@ def eliminar_ficha(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(*RolesPermisos.ESCRITURA))
 ):
-    """Desactiva una ficha (soft delete)."""
     ficha = crud.get_ficha(db, ficha_id)
     if not ficha:
         raise HTTPException(status_code=404, detail="Ficha no encontrada")
@@ -183,32 +172,25 @@ def eliminar_ficha(
     return None
 
 
-# ================== NUEVO: Aprendices por Ficha ==================
+# ================== Aprendices por Ficha ==================
 @router.get("/fichas/{ficha_id}/aprendices")
 def listar_aprendices_por_ficha(
     ficha_id: int,
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Obtiene todos los aprendices (procesos) de una ficha específica."""
-    # Verificar que la ficha existe
     ficha = crud.get_ficha(db, ficha_id)
     if not ficha:
         raise HTTPException(status_code=404, detail="Ficha no encontrada")
 
-    # Obtener todos los procesos activos de esa ficha
-    procesos = (
-        db.query(ProcesoEtapaProductiva)
-        .filter(
-            ProcesoEtapaProductiva.ficha_id == ficha_id,
-            ProcesoEtapaProductiva.is_active == True
-        )
-        .all()
-    )
+    procesos = crud.get_aprendices_por_ficha(db, ficha.id)
 
-    # Formatear la respuesta
     resultado = []
     for p in procesos:
+        estado_str = "ACTIVO"
+        if p.estado:
+            estado_str = p.estado.value if hasattr(p.estado, 'value') else str(p.estado)
+
         resultado.append({
             "id": p.id,
             "aprendiz_id": p.aprendiz_id,
@@ -216,7 +198,7 @@ def listar_aprendices_por_ficha(
             "correo": p.aprendiz_email or "Sin correo",
             "empresa": p.empresa_nombre or "Sin asignar",
             "arl": p.arl or "Sin ARL",
-            "estado": p.estado or "ACTIVO",
+            "estado": estado_str,
             "fecha_inicio": p.fecha_inicio.isoformat() if p.fecha_inicio else None,
             "fecha_fin": p.fecha_fin.isoformat() if p.fecha_fin else None,
         })
@@ -225,6 +207,27 @@ def listar_aprendices_por_ficha(
 
 
 # ================== Asignaciones Instructor-Ficha ==================
+
+# 🔥 NUEVO ENDPOINT: Listar asignaciones con filtros
+@router.get("/asignaciones", response_model=list[schemas.AsignacionInstructorFichaOut])
+def listar_asignaciones(
+    ficha_id: Optional[int] = None,
+    instructor_id: Optional[int] = None,
+    estado_asignacion: Optional[EstadoAsignacion] = None,
+    solo_activas: bool = True,
+    db: Session = Depends(get_db),
+    current_user: Usuario = Depends(get_current_user)
+):
+    """Lista todas las asignaciones con filtros opcionales."""
+    return crud.list_asignaciones(
+        db,
+        ficha_id=ficha_id,
+        instructor_id=instructor_id,
+        estado_asignacion=estado_asignacion,
+        solo_activas=solo_activas,
+    )
+
+
 @router.post(
     "/asignaciones",
     response_model=schemas.AsignacionInstructorFichaOut,
@@ -235,7 +238,6 @@ def crear_asignacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(*RolesPermisos.ESCRITURA))
 ):
-    """Asigna una ficha a un instructor. Si ya existía una asignación inactiva, la reactiva."""
     ficha = crud.get_ficha(db, asignacion.ficha_id)
     if not ficha or not ficha.is_active:
         raise HTTPException(status_code=404, detail="Ficha no encontrada o inactiva")
@@ -248,14 +250,12 @@ def crear_asignacion(
     if not instructor:
         raise HTTPException(status_code=400, detail="El usuario no es un instructor activo")
 
-    # Buscar cualquier asignación previa (activa o inactiva)
     existente = crud.get_asignacion_por_ficha_instructor(
         db, asignacion.ficha_id, asignacion.instructor_id
     )
     if existente:
         if existente.is_active and existente.estado_asignacion == EstadoAsignacion.ACTIVA:
             raise HTTPException(status_code=400, detail="La ficha ya está asignada a este instructor")
-        # Si la asignación está inactiva, reactivarla
         return crud.reactivar_asignacion(db, existente)
 
     data = asignacion.model_dump()
@@ -270,12 +270,10 @@ def obtener_asignacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(get_current_user)
 ):
-    """Obtiene una asignación por su ID."""
     asignacion = crud.get_asignacion(db, asignacion_id)
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
 
-    # Un instructor solo puede ver su propia asignación
     if current_user.rol_id == Roles.INSTRUCTOR and asignacion.instructor_id != current_user.id:
         raise HTTPException(status_code=403, detail="No autorizado para ver esta asignación")
 
@@ -292,7 +290,6 @@ def actualizar_asignacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """Actualiza el estado de una asignación (ACTIVA/INACTIVA)."""
     asignacion = crud.get_asignacion(db, asignacion_id)
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
@@ -307,7 +304,6 @@ def eliminar_asignacion(
     db: Session = Depends(get_db),
     current_user: Usuario = Depends(require_role(Roles.ADMIN, Roles.COORDINADOR))
 ):
-    """Desactiva una asignación (soft delete)."""
     asignacion = crud.get_asignacion(db, asignacion_id)
     if not asignacion:
         raise HTTPException(status_code=404, detail="Asignación no encontrada")
