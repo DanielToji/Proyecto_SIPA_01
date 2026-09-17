@@ -1,5 +1,5 @@
 -- ============================================================
--- SCRIPT COMPLETO - SIPA (Corregido + Seeds + Verificación)
+-- SCRIPT COMPLETO - SIPA (Actualizado con todos los cambios)
 -- ============================================================
 
 DROP SCHEMA IF EXISTS etapa_productiva CASCADE;
@@ -23,7 +23,7 @@ CREATE TYPE estado_medida_formativa_t AS ENUM ('SI', 'NO', 'PENDIENTE');
 CREATE TYPE estado_correo_desercion_t AS ENUM ('ENVIADO', 'PENDIENTE', 'NO_APLICA');
 
 -- ============================================================
--- 2. FUNCIÓN DE AUDITORÍA (Triggers)
+-- 2. FUNCIÓN DE AUDITORÍA
 -- ============================================================
 CREATE OR REPLACE FUNCTION set_updated_at()
 RETURNS TRIGGER AS $$
@@ -34,7 +34,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- 3. TABLAS BASE: SEGURIDAD Y ACADÉMICAS
+-- 3. TABLAS BASE
 -- ============================================================
 CREATE TABLE roles (
     id BIGSERIAL PRIMARY KEY,
@@ -58,16 +58,14 @@ CREATE TABLE usuarios (
     rol_id BIGINT NOT NULL,
     preferencias_ui JSONB NOT NULL DEFAULT '{}'::jsonb,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    reset_code VARCHAR(6),
+    reset_code_expires_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at TIMESTAMPTZ,
     CONSTRAINT fk_usuarios_rol FOREIGN KEY (rol_id) REFERENCES roles(id) ON DELETE RESTRICT,
     CONSTRAINT ck_usuarios_email CHECK (email ~* '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$')
 );
-
--- Columnas necesarias para recuperación de contraseña
-ALTER TABLE usuarios ADD COLUMN reset_code VARCHAR(6);
-ALTER TABLE usuarios ADD COLUMN reset_code_expires_at TIMESTAMPTZ;
 
 CREATE TABLE usuario_roles (
     id BIGSERIAL PRIMARY KEY,
@@ -94,12 +92,16 @@ CREATE TABLE programas_formacion (
     deleted_at TIMESTAMPTZ
 );
 
+-- 🔥 TABLA FICHAS CON LAS COLUMNAS NUEVAS
 CREATE TABLE fichas (
     id BIGSERIAL PRIMARY KEY,
     programa_id BIGINT NOT NULL,
     numero_ficha VARCHAR(20) NOT NULL UNIQUE,
     fecha_inicio DATE NOT NULL,
     fecha_fin DATE NOT NULL,
+    nivel VARCHAR(50) DEFAULT 'Tecnólogo',
+    jornada VARCHAR(50) DEFAULT 'Mañana',
+    aprendices_esperados INTEGER DEFAULT 0,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -124,7 +126,7 @@ CREATE TABLE asignaciones_instructor_ficha (
 );
 
 -- ============================================================
--- 4. TABLAS: EMPRESAS Y MODALIDADES
+-- 4. EMPRESAS Y MODALIDADES
 -- ============================================================
 CREATE TABLE modalidades_ep (
     id BIGSERIAL PRIMARY KEY,
@@ -136,6 +138,7 @@ CREATE TABLE modalidades_ep (
     deleted_at TIMESTAMPTZ
 );
 
+-- 🔥 TABLA EMPRESAS CON COLUMNA ARL NUEVA
 CREATE TABLE empresas (
     id BIGSERIAL PRIMARY KEY,
     nit VARCHAR(20) NOT NULL UNIQUE,
@@ -143,6 +146,7 @@ CREATE TABLE empresas (
     direccion VARCHAR(200),
     telefono VARCHAR(20),
     correo_contacto VARCHAR(150),
+    arl VARCHAR(100),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -164,7 +168,7 @@ CREATE TABLE coordinadores_empresa (
 );
 
 -- ============================================================
--- 5. TABLA: EVIDENCIAS / ARCHIVOS (Metadata)
+-- 5. EVIDENCIAS
 -- ============================================================
 CREATE TABLE evidencias_archivos (
     id BIGSERIAL PRIMARY KEY,
@@ -183,7 +187,7 @@ CREATE TABLE evidencias_archivos (
 );
 
 -- ============================================================
--- 6. TABLA CORE: PROCESOS DE ETAPA PRODUCTIVA
+-- 6. PROCESOS
 -- ============================================================
 CREATE TABLE procesos_etapa_productiva (
     id BIGSERIAL PRIMARY KEY,
@@ -218,7 +222,7 @@ CREATE TABLE procesos_etapa_productiva (
 );
 
 -- ============================================================
--- 7. TABLAS DE SEGUIMIENTO (Formatos F023, F147 y Novedades)
+-- 7. SEGUIMIENTO
 -- ============================================================
 CREATE TABLE reuniones_seguimiento (
     id BIGSERIAL PRIMARY KEY,
@@ -238,10 +242,7 @@ CREATE TABLE reuniones_seguimiento (
     CONSTRAINT fk_reunion_instructor FOREIGN KEY (instructor_id) REFERENCES usuarios(id) ON DELETE RESTRICT,
     CONSTRAINT fk_reunion_evidencia FOREIGN KEY (evidencia_archivo_id) REFERENCES evidencias_archivos(id) ON DELETE SET NULL,
     CONSTRAINT uq_reunion_proceso_momento UNIQUE (proceso_id, momento),
-    CONSTRAINT ck_reunion_fechas CHECK (fecha_realizada IS NULL OR fecha_realizada >= fecha_programada),
-    CONSTRAINT ck_reunion_evidencia_realizada CHECK (
-        fecha_realizada IS NULL OR (evidencia_archivo_id IS NOT NULL OR archivo_f023_url IS NOT NULL)
-    )
+    CONSTRAINT ck_reunion_fechas CHECK (fecha_realizada IS NULL OR fecha_realizada >= fecha_programada)
 );
 
 CREATE TABLE bitacoras (
@@ -287,16 +288,13 @@ CREATE TABLE novedades_proceso (
     fecha_novedad DATE NOT NULL,
     descripcion TEXT NOT NULL,
     documento_soporte_url VARCHAR(500),
-    is_active BOOLEAN NOT NULL DEFAULT true,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at TIMESTAMPTZ,
     CONSTRAINT fk_novedad_proceso FOREIGN KEY (proceso_id) REFERENCES procesos_etapa_productiva(id) ON DELETE CASCADE
 );
 
--- ============================================================
--- 8. NUEVAS TABLAS: CHECKLIST DOCUMENTAL Y MEDIDAS FORMATIVAS
--- ============================================================
 CREATE TABLE checklist_documentos_proceso (
     id BIGSERIAL PRIMARY KEY,
     proceso_id BIGINT NOT NULL REFERENCES procesos_etapa_productiva(id) ON DELETE CASCADE,
@@ -326,16 +324,9 @@ CREATE TABLE medidas_formativas_proceso (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     deleted_at TIMESTAMPTZ,
-    CONSTRAINT uq_medidas_proceso UNIQUE (proceso_id),
-    CONSTRAINT ck_llamado_fecha CHECK (llamado_atencion_estado <> 'SI' OR fecha_llamado_atencion IS NOT NULL),
-    CONSTRAINT ck_plan_fecha CHECK (plan_mejoramiento_estado <> 'SI' OR fecha_plan_mejoramiento IS NOT NULL),
-    CONSTRAINT ck_correo1_fecha CHECK (correo_desercion_1_estado <> 'ENVIADO' OR fecha_correo_desercion_1 IS NOT NULL),
-    CONSTRAINT ck_correo2_fecha CHECK (correo_desercion_2_estado <> 'ENVIADO' OR fecha_correo_desercion_2 IS NOT NULL)
+    CONSTRAINT uq_medidas_proceso UNIQUE (proceso_id)
 );
 
--- ============================================================
--- 9. TABLAS: CHARLAS Y ASISTENCIAS (Pre-productiva)
--- ============================================================
 CREATE TABLE charlas (
     id BIGSERIAL PRIMARY KEY,
     ficha_id BIGINT NOT NULL,
@@ -369,13 +360,9 @@ CREATE TABLE asistencias_charlas (
     CONSTRAINT fk_asistencia_charla FOREIGN KEY (charla_id) REFERENCES charlas(id) ON DELETE CASCADE,
     CONSTRAINT fk_asistencia_aprendiz FOREIGN KEY (aprendiz_id) REFERENCES usuarios(id) ON DELETE RESTRICT,
     CONSTRAINT fk_asistencia_evidencia FOREIGN KEY (evidencia_archivo_id) REFERENCES evidencias_archivos(id) ON DELETE SET NULL,
-    CONSTRAINT uq_asistencia_charla_aprendiz UNIQUE (charla_id, aprendiz_id),
-    CONSTRAINT ck_asistencia_fecha CHECK (asistio = FALSE OR fecha_asistencia IS NOT NULL)
+    CONSTRAINT uq_asistencia_charla_aprendiz UNIQUE (charla_id, aprendiz_id)
 );
 
--- ============================================================
--- 10. TABLAS: COMUNICACIONES
--- ============================================================
 CREATE TABLE notificaciones_mensajes (
     id BIGSERIAL PRIMARY KEY,
     remitente_usuario_id BIGINT,
@@ -395,11 +382,12 @@ CREATE TABLE notificaciones_mensajes (
 );
 
 -- ============================================================
--- 11. ÍNDICES PARA ALTO TRÁFICO
+-- 8. ÍNDICES
 -- ============================================================
 CREATE INDEX idx_usuario_roles_rol ON usuario_roles(rol_id);
 CREATE INDEX idx_usuarios_email_active ON usuarios(email) WHERE is_active;
 CREATE INDEX idx_usuarios_rol_id ON usuarios(rol_id);
+CREATE INDEX idx_usuarios_reset_code ON usuarios(reset_code) WHERE reset_code IS NOT NULL;
 CREATE INDEX idx_fichas_programa ON fichas(programa_id);
 CREATE INDEX idx_asig_instructor_id ON asignaciones_instructor_ficha(instructor_id);
 CREATE INDEX idx_coordinadores_empresa_empresa ON coordinadores_empresa(empresa_id);
@@ -408,15 +396,10 @@ CREATE INDEX idx_procesos_aprendiz ON procesos_etapa_productiva(aprendiz_id);
 CREATE INDEX idx_procesos_ficha ON procesos_etapa_productiva(ficha_id);
 CREATE INDEX idx_procesos_modalidad ON procesos_etapa_productiva(modalidad_id);
 CREATE INDEX idx_procesos_empresa ON procesos_etapa_productiva(empresa_id);
-CREATE INDEX idx_procesos_coordinador ON procesos_etapa_productiva(coordinador_empresa_id);
 CREATE INDEX idx_procesos_instructor ON procesos_etapa_productiva(instructor_id);
 CREATE INDEX idx_procesos_estado ON procesos_etapa_productiva(estado);
-CREATE INDEX idx_procesos_estado_sofia ON procesos_etapa_productiva(estado_sofia);
-CREATE INDEX idx_procesos_estado_fecha_fin ON procesos_etapa_productiva(estado, fecha_fin);
 CREATE INDEX idx_novedades_proceso ON novedades_proceso(proceso_id);
-CREATE INDEX idx_novedades_tipo ON novedades_proceso(tipo_novedad);
 CREATE INDEX idx_checklist_proceso ON checklist_documentos_proceso(proceso_id);
-CREATE INDEX idx_checklist_estado ON checklist_documentos_proceso(estado);
 CREATE INDEX idx_medidas_proceso ON medidas_formativas_proceso(proceso_id);
 CREATE INDEX idx_charlas_instructor ON charlas(instructor_id);
 CREATE INDEX idx_asistencias_aprendiz ON asistencias_charlas(aprendiz_id);
@@ -424,13 +407,12 @@ CREATE INDEX idx_reuniones_instructor ON reuniones_seguimiento(instructor_id);
 CREATE INDEX idx_reuniones_proceso ON reuniones_seguimiento(proceso_id);
 CREATE INDEX idx_bitacoras_proceso ON bitacoras(proceso_id);
 CREATE INDEX idx_bitacoras_estado ON bitacoras(estado);
-CREATE INDEX idx_bitacoras_periodo ON bitacoras(periodo_reportado);
 CREATE INDEX idx_bitacora_evid_archivo ON bitacora_evidencias(evidencia_archivo_id);
 CREATE INDEX idx_notif_destinatario ON notificaciones_mensajes(destinatario_usuario_id);
 CREATE INDEX idx_notif_estado_envio ON notificaciones_mensajes(estado_envio_email);
 
 -- ============================================================
--- 12. TRIGGERS DE AUDITORÍA (updated_at)
+-- 9. TRIGGERS DE AUDITORÍA
 -- ============================================================
 CREATE TRIGGER trg_roles_updated_at BEFORE UPDATE ON roles FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_usuarios_updated_at BEFORE UPDATE ON usuarios FOR EACH ROW EXECUTE FUNCTION set_updated_at();
@@ -454,21 +436,7 @@ CREATE TRIGGER trg_checklist_updated_at BEFORE UPDATE ON checklist_documentos_pr
 CREATE TRIGGER trg_medidas_updated_at BEFORE UPDATE ON medidas_formativas_proceso FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 
 -- ============================================================
--- COMENTARIOS ADICIONALES
--- ============================================================
-COMMENT ON COLUMN usuarios.rol_id IS 'Rol principal del usuario. Los roles adicionales se gestionan en usuario_roles.';
-COMMENT ON COLUMN usuarios.tipo_documento IS 'Tipo de documento de identidad (TI, CC, CE, PTE).';
-COMMENT ON COLUMN procesos_etapa_productiva.estado_sofia IS 'Control del estado del proceso en la plataforma SOFIA Plus.';
-COMMENT ON COLUMN procesos_etapa_productiva.nota_empresa IS 'Nota de evaluación final asignada por la empresa (0-10).';
-COMMENT ON COLUMN procesos_etapa_productiva.nota_instructor IS 'Nota de evaluación final asignada por el instructor (0-10).';
-COMMENT ON TABLE novedades_proceso IS 'Registro de novedades durante la etapa productiva (renuncias, incapacidades, prórrogas, etc.).';
-COMMENT ON TABLE checklist_documentos_proceso IS 'Checklist de documentos requeridos para el proceso de etapa productiva.';
-COMMENT ON TABLE medidas_formativas_proceso IS 'Medidas formativas y alertas de deserción aplicadas al proceso.';
-COMMENT ON COLUMN reuniones_seguimiento.archivo_f023_url IS 'URL directa al documento del Formato F023 (evidencia física).';
-COMMENT ON COLUMN bitacoras.archivo_f147_url IS 'URL directa al documento del Formato F147 (bitácora).';
-
--- ============================================================
--- 13. DATOS SEMILLA (SEED)
+-- 10. DATOS SEMILLA
 -- ============================================================
 
 -- 🔹 Roles
@@ -491,32 +459,105 @@ INSERT INTO modalidades_ep (nombre) VALUES
 ('Economía popular')
 ON CONFLICT (nombre) DO NOTHING;
 
--- ============================================================
--- 🔥 USUARIOS DE PRUEBA
--- Contraseña para TODOS: Test1234
--- Hash bcrypt real: $2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i
--- ============================================================
+-- 🔹 Programas de formación
+INSERT INTO programas_formacion (codigo, nombre, descripcion) VALUES
+('228106', 'Análisis y Desarrollo de Software', 'Programa tecnólogo en desarrollo de software'),
+('122112', 'Gestión Empresarial', 'Programa tecnólogo en gestión empresarial'),
+('133100', 'Contabilidad y Finanzas', 'Programa técnico en contabilidad'),
+('228118', 'Desarrollo Web', 'Programa tecnólogo en desarrollo web')
+ON CONFLICT (codigo) DO NOTHING;
+
+-- 🔹 Usuarios de prueba (contraseña: Test1234)
 INSERT INTO usuarios (nombre, apellido, email, password_hash, rol_id, is_active)
 VALUES
-    ('Admin',       'Sistema',  'usuario1@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 1, TRUE),
-    ('Carlos',      'Ramírez',  'usuario2@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 3, TRUE),
-    ('Pedro',       'Gómez',    'usuario3@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 4, TRUE),
-    ('Laura',       'Martínez', 'usuario4@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 2, TRUE),
-    ('Andrés',      'Pérez',    'usuario5@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 6, TRUE)
+    ('Admin',   'Sistema',  'usuario1@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 1, TRUE),
+    ('Carlos',  'Ramírez',  'usuario2@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 3, TRUE),
+    ('Pedro',   'Gómez',    'usuario3@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 4, TRUE),
+    ('Laura',   'Martínez', 'usuario4@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 2, TRUE),
+    ('Andrés',  'Pérez',    'usuario5@test.com', '$2b$12$29YhmtZimHMsmWtc8oWtJeFgik/258Txyc8v6xytmSYXIC4Tudx0i', 6, TRUE)
 ON CONFLICT (email) DO NOTHING;
 
--- ============================================================
--- 14. VERIFICACIÓN FINAL (te muestra lo que quedó)
--- ============================================================
-SELECT 'Roles insertados' AS check_name, COUNT(*)::TEXT AS resultado FROM roles
-UNION ALL
-SELECT 'Modalidades insertadas', COUNT(*)::TEXT FROM modalidades_ep
-UNION ALL
-SELECT 'Usuarios insertados', COUNT(*)::TEXT FROM usuarios;
+-- 🔹 Fichas de prueba
+INSERT INTO fichas (programa_id, numero_ficha, fecha_inicio, fecha_fin, nivel, jornada, aprendices_esperados)
+VALUES
+    (1, '2875901', '2025-01-15', '2025-12-15', 'Tecnólogo', 'Mañana', 28),
+    (2, '2875902', '2025-01-20', '2025-12-20', 'Tecnólogo', 'Tarde', 24),
+    (3, '2875903', '2025-02-10', '2025-11-10', 'Técnico', 'Noche', 32),
+    (4, '2875904', '2025-03-01', '2025-12-01', 'Tecnólogo', 'Mañana', 20)
+ON CONFLICT (numero_ficha) DO NOTHING;
 
--- Detalle de usuarios con su rol
-SELECT u.id, u.email, r.nombre AS rol, u.is_active,
-       LEFT(u.password_hash, 30) || '...' AS hash_inicio
-FROM usuarios u
-JOIN roles r ON r.id = u.rol_id
-ORDER BY u.id;
+-- 🔹 Empresas de prueba (con ARL)
+INSERT INTO empresas (nit, razon_social, direccion, telefono, correo_contacto, arl) VALUES
+    ('900123456-1', 'TechSoft S.A.S.', 'Calle 123 #45-67', '3001234567', 'contacto@techsoft.com', 'SURA'),
+    ('900987654-2', 'Innovar Solutions', 'Carrera 89 #12-34', '3109876543', 'info@innovar.com', 'Positiva'),
+    ('900555444-3', 'SENA - Centro de Formación', 'Calle 100 #20-30', '3153334444', 'sena@sena.edu.co', 'Colpatria')
+ON CONFLICT (nit) DO NOTHING;
+
+-- 🔹 Coordinadores de empresa
+INSERT INTO coordinadores_empresa (empresa_id, nombre, cargo, correo, telefono)
+SELECT e.id, 'Ana Coordinadora', 'Jefe de Talento Humano', 'ana@techsoft.com', '3001234567'
+FROM empresas e WHERE e.nit = '900123456-1'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO coordinadores_empresa (empresa_id, nombre, cargo, correo, telefono)
+SELECT e.id, 'Luis Coordinador', 'Gerente de RRHH', 'luis@innovar.com', '3109876543'
+FROM empresas e WHERE e.nit = '900987654-2'
+ON CONFLICT DO NOTHING;
+
+-- 🔹 Procesos de etapa productiva (asignan aprendices a la ficha 2875901)
+INSERT INTO procesos_etapa_productiva 
+    (aprendiz_id, ficha_id, modalidad_id, empresa_id, coordinador_empresa_id, instructor_id, 
+     fecha_inicio, fecha_fin, estado, estado_sofia, nota_empresa, nota_instructor)
+SELECT 
+    u.id, f.id, 1,
+    e.id, c.id, 2,
+    '2025-01-15', '2025-12-15', 'ACTIVO', 'PENDIENTE', NULL, NULL
+FROM usuarios u, fichas f, empresas e, coordinadores_empresa c
+WHERE u.email = 'usuario3@test.com'
+  AND f.numero_ficha = '2875901'
+  AND e.nit = '900123456-1'
+  AND c.nombre = 'Ana Coordinadora'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO procesos_etapa_productiva 
+    (aprendiz_id, ficha_id, modalidad_id, empresa_id, coordinador_empresa_id, instructor_id, 
+     fecha_inicio, fecha_fin, estado, estado_sofia)
+SELECT 
+    u.id, f.id, 2,
+    e.id, c.id, 2,
+    '2025-01-15', '2025-12-15', 'ACTIVO', 'PENDIENTE'
+FROM usuarios u, fichas f, empresas e, coordinadores_empresa c
+WHERE u.email = 'usuario5@test.com'
+  AND f.numero_ficha = '2875901'
+  AND e.nit = '900987654-2'
+  AND c.nombre = 'Luis Coordinador'
+ON CONFLICT DO NOTHING;
+
+-- ============================================================
+-- 11. VERIFICACIÓN FINAL
+-- ============================================================
+SELECT 'Roles' AS tabla, COUNT(*) AS total FROM roles
+UNION ALL SELECT 'Modalidades', COUNT(*) FROM modalidades_ep
+UNION ALL SELECT 'Programas', COUNT(*) FROM programas_formacion
+UNION ALL SELECT 'Usuarios', COUNT(*) FROM usuarios
+UNION ALL SELECT 'Fichas', COUNT(*) FROM fichas
+UNION ALL SELECT 'Empresas', COUNT(*) FROM empresas
+UNION ALL SELECT 'Coordinadores', COUNT(*) FROM coordinadores_empresa
+UNION ALL SELECT 'Procesos', COUNT(*) FROM procesos_etapa_productiva
+ORDER BY tabla;
+
+-- Detalle de procesos (aprendices en la ficha 2875901)
+SELECT 
+    p.id,
+    u.nombre || ' ' || u.apellido AS aprendiz,
+    f.numero_ficha,
+    e.razon_social AS empresa,
+    e.arl,
+    m.nombre AS modalidad,
+    p.estado
+FROM procesos_etapa_productiva p
+JOIN usuarios u ON u.id = p.aprendiz_id
+JOIN fichas f ON f.id = p.ficha_id
+LEFT JOIN empresas e ON e.id = p.empresa_id
+LEFT JOIN modalidades_ep m ON m.id = p.modalidad_id
+ORDER BY p.id;
